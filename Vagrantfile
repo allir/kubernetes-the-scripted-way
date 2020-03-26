@@ -6,6 +6,7 @@
 NUM_MASTER_NODE = 3
 NUM_WORKER_NODE = 2
 
+# Node network
 IP_NW = "192.168.5."
 MASTER_IP_START = 10
 NODE_IP_START = 20
@@ -83,6 +84,7 @@ set -x
 cp /vagrant/files/id_rsa* ~/.ssh/
 cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
 SCRIPT
+
 
 $setup_hosts = <<SCRIPT
 set -x
