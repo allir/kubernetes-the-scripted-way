@@ -2,6 +2,22 @@
 
 Kubernetes-the-hard-way (KTHW) on Vagrant... Scripted
 
+## Requirements
+
+* VirtualBox
+* Vagrant
+
+### Installing Requirements
+
+#### macOS
+
+Using `homebrew`
+```bash
+brew cask install virtualbox virtualbox virtualbox-extension-pack
+
+brew cask install vagrant
+```
+
 ##  Using
 
 ### Provisioning with Vagrant
