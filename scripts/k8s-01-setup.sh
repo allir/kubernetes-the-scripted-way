@@ -119,7 +119,7 @@ cat > ${instance}-csr.json <<EOF
 }
 EOF
 
-INTERNAL_IP=$(grep worker-1 /etc/hosts | head -1 | cut -d' ' -f1)
+INTERNAL_IP=$(grep ${instance} /etc/hosts | head -1 | cut -d' ' -f1)
 
 cfssl gencert \
   -ca=ca.pem \
