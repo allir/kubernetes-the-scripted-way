@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-KUBERNETES_RELEASE="$(curl -sSL https://dl.k8s.io/release/stable.txt)"
-
-MASTER_NODES="master-1 master-2 master-3"
-WORKER_NODES="worker-1 worker-2"
-KUBERNETES_PUBLIC_ADDRESS=192.168.5.30
-KUBERNETS_MASTER_NODE_IPS=192.168.5.11,192.168.5.12,192.168.5.13
-CLUSTER_CIDR=192.168.5.0/24
-CLUSTER_SERVICE_CIDR=10.96.0.0/24
-KUBERNETES_SERVICE_IP=10.96.0.1
-KUBERNETES_DNS_IP=10.96.0.10
+# Run on master-1 
 
 { # Install CFSSL
   curl -L https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 -o cfssl
@@ -100,7 +91,7 @@ cfssl gencert \
 }
 
 { # Generate Kubelet Certificates
-for instance in $WORKER_NODES; do
+for instance in $MASTER_NODES $WORKER_NODES; do
 cat > ${instance}-csr.json <<EOF
 {
   "CN": "system:node:${instance}",
@@ -218,6 +209,8 @@ cfssl gencert \
 
 { # Generate Kubernetes API Certificate
 KUBERNETES_HOSTNAMES=kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local
+MASTER_NODE_IPS=$(for ip in $(grep master /etc/hosts | awk '{print $1}'); do printf ${ip},; done)
+MASTER_NODE_IPS=${MASTER_NODE_IPS%?}
 
 cat > kubernetes-csr.json <<EOF
 {
@@ -241,7 +234,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -hostname=${KUBERNETES_SERVICE_IP},${KUBERNETS_MASTER_NODE_IPS},${KUBERNETES_PUBLIC_ADDRESS},127.0.0.1,${KUBERNETES_HOSTNAMES} \
+  -hostname=${KUBERNETES_SERVICE_IP},${MASTER_NODE_IPS},${LOADBALANCER_IP},127.0.0.1,${KUBERNETES_HOSTNAMES} \
   -profile=kubernetes \
   kubernetes-csr.json | cfssljson -bare kubernetes
 }
@@ -269,7 +262,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -hostname=${KUBERNETS_MASTER_NODE_IPS},127.0.0.1 \
+  -hostname=${MASTER_NODE_IPS},127.0.0.1 \
   -profile=kubernetes \
   kubernetes-csr.json | cfssljson -bare etcd-server
 }
@@ -310,6 +303,7 @@ done
 
 for instance in $MASTER_NODES; do
   scp -o StrictHostKeyChecking=no ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
+    ${instance}.pem ${instance}-key.pem \
     admin-key.pem admin.pem \
     service-account-key.pem service-account.pem \
     etcd-server-key.pem etcd-server.pem ${instance}:~/
@@ -317,11 +311,11 @@ done
 }
 
 { # Generate kubeconfig files
-for instance in $WORKER_NODES; do
+for instance in $MASTER_NODES $WORKER_NODES; do
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
+    --server=https://${LOADBALANCER_IP}:6443 \
     --kubeconfig=${instance}.kubeconfig
 
   kubectl config set-credentials system:node:${instance} \
@@ -342,7 +336,7 @@ done
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
+    --server=https://${LOADBALANCER_IP}:6443 \
     --kubeconfig=kube-proxy.kubeconfig
 
   kubectl config set-credentials system:kube-proxy \
@@ -426,7 +420,7 @@ for instance in $WORKER_NODES; do
 done
 
 for instance in $MASTER_NODES; do
-  scp -o StrictHostKeyChecking=no admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
+  scp -o StrictHostKeyChecking=no ${instance}.kubeconfig kube-proxy.kubeconfig admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
 done
 }
 
@@ -458,7 +452,7 @@ done
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443
+    --server=https://${LOADBALANCER_IP}:6443
 
   kubectl config set-credentials admin \
     --client-certificate=admin.pem \

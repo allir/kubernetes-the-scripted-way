@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-KUBERNETES_RELEASE="$(curl -sSL https://dl.k8s.io/release/stable.txt)"
-
-KUBERNETES_PUBLIC_ADDRESS=192.168.5.30
-CLUSTER_CIDR=192.168.5.0/24
-CLUSTER_SERVICE_CIDR=10.96.0.0/24
-KUBERNETES_SERVICE_IP=10.96.0.1
-KUBERNETES_DNS_IP=10.96.0.10
-
-BOOTSTRAP_TOKEN_ID="07401b"
-BOOTSTRAP_TOKEN_SECRET="f395accd246ae52d"
-
 { # RBAC for Kubelet Authorization
 cat <<EOF | kubectl apply --kubeconfig admin.kubeconfig -f -
 apiVersion: rbac.authorization.k8s.io/v1
@@ -133,7 +122,7 @@ EOF
 }
 
 { # Setting up Networking and DNS
-  kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+  kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')&env.IPALLOC_RANGE=${CLUSTER_POD_CIDR}"
   
   curl -s https://raw.githubusercontent.com/coredns/deployment/master/kubernetes/coredns.yaml.sed | sed -E "s/# replicas.*$/replicas: 2/" | sed "s/CLUSTER_DNS_IP/${KUBERNETES_DNS_IP}/" | kubectl apply -f -
 

@@ -4,17 +4,6 @@ set -euxo pipefail
 # Run on all WORKER nodes
 ## TLS Bootstrap
 
-KUBERNETES_RELEASE="$(curl -sSL https://dl.k8s.io/release/stable.txt)"
-
-KUBERNETES_PUBLIC_ADDRESS=192.168.5.30
-CLUSTER_CIDR=192.168.5.0/24
-CLUSTER_SERVICE_CIDR=10.96.0.0/24
-KUBERNETES_SERVICE_IP=10.96.0.1
-KUBERNETES_DNS_IP=10.96.0.10
-
-BOOTSTRAP_TOKEN_ID="07401b"
-BOOTSTRAP_TOKEN_SECRET="f395accd246ae52d"
-
 { # Setup dependencies
   sudo apt -qq update && sudo apt -qq install -y socat conntrack ipset
 }
@@ -23,7 +12,7 @@ BOOTSTRAP_TOKEN_SECRET="f395accd246ae52d"
 curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_RELEASE}/bin/linux/amd64/kubectl
 curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_RELEASE}/bin/linux/amd64/kubelet
 curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_RELEASE}/bin/linux/amd64/kube-proxy
-curl -LO https://github.com/containernetworking/plugins/releases/download/v0.8.5/cni-plugins-linux-amd64-v0.8.5.tgz 
+curl -LO https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-linux-amd64-${CNI_VERSION}.tgz
 
 sudo mkdir -p \
   /etc/cni/net.d \
@@ -33,7 +22,7 @@ sudo mkdir -p \
   /var/lib/kubernetes \
   /var/run/kubernetes
 
-sudo tar -xzvf cni-plugins-linux-amd64-v0.8.5.tgz --directory /opt/cni/bin/
+sudo tar -xzvf cni-plugins-linux-amd64-${CNI_VERSION}.tgz --directory /opt/cni/bin/
 chmod +x kubectl kube-proxy kubelet
 sudo mv kubectl kube-proxy kubelet /usr/local/bin/
 
@@ -45,7 +34,7 @@ apiVersion: v1
 clusters:
 - cluster:
     certificate-authority: /var/lib/kubernetes/ca.pem
-    server: https://${KUBERNETES_PUBLIC_ADDRESS}:6443
+    server: https://${LOADBALANCER_IP}:6443
   name: bootstrap
 contexts:
 - context:
@@ -139,3 +128,10 @@ sudo systemctl enable kubelet kube-proxy
 sudo systemctl start kubelet kube-proxy
 systemctl status --no-pager kubelet kube-proxy
 }
+
+# Label master nodes with role
+if [[ ${HOSTNAME} == "master-"* ]]; then
+  # Wait for the node to show up
+  sleep 5
+  kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/master=
+fi

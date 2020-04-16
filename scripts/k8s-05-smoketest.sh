@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKER_NODES="worker-1 worker-2"
-
 echo "Running smoketests"
 
 echo "Deploying NGINX"

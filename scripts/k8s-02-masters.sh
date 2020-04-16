@@ -2,20 +2,13 @@
 set -euxo pipefail
 
 # Run on all MASTER nodes
-KUBERNETES_RELEASE="$(curl -sSL https://dl.k8s.io/release/stable.txt)"
 
-KUBERNETES_PUBLIC_ADDRESS=192.168.5.30
-CLUSTER_CIDR=192.168.5.0/24
-CLUSTER_SERVICE_CIDR=10.96.0.0/24
-KUBERNETES_SERVICE_IP=10.96.0.1
-KUBERNETES_DNS_IP=10.96.0.10
-
-ETCD_CLUSTER="master-1=https://192.168.5.11:2380,master-2=https://192.168.5.12:2380,master-3=https://192.168.5.13:2380"
-ETCD_SERVERS="https://192.168.5.11:2379,https://192.168.5.12:2379,https://192.168.5.13:2379"
+ETCD_CLUSTER=$(for master in $(grep master /etc/hosts | awk '{ print $2 "=https://" $1 ":2380" }'); do printf ${master},; done)
+ETCD_CLUSTER=${ETCD_CLUSTER%?}
+ETCD_SERVERS=$(for master in $(grep master /etc/hosts | awk '{ print "https://" $1 ":2379" }'); do printf ${master},; done)
+ETCD_SERVERS=${ETCD_SERVERS%?}
 
 { # Bootstrap ETCD on Master Nodes
-ETCD_VERSION=v3.4.5
-
 curl -LO https://storage.googleapis.com/etcd/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz
 
 tar -xvf etcd-${ETCD_VERSION}-linux-amd64.tar.gz
@@ -203,4 +196,4 @@ echo "Wait for API Server to be ready"
 sleep 10
 kubectl get componentstatuses --kubeconfig admin.kubeconfig
 kubectl get nodes --kubeconfig admin.kubeconfig
-curl --cacert ca.pem https://192.168.5.30:6443/version
+curl --cacert ca.pem https://${LOADBALANCER_IP}:6443/version

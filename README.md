@@ -62,15 +62,17 @@ vagrant ssh master-1
 
     The required certificates are created during step 1 so either way will work. You can provision all the worker nodes the same way or each one differently.
 
+    NOTE: We can/should also run this on the master nodes so they'll be visible in the cluster and join the cluster networking.
+
     a. Manually created certificate
     ```bash
-    # On one or more worker nodes run the worker setup script
+    # On one or more master & worker nodes run the worker setup script
     /vagrant/scripts/k8s-04a-workers.sh
     ```
 
     b. TLS Bootstrap
     ```bash
-    # On one or more worker nodes run the worker bootstrap setup script
+    # On one or more master & worker nodes run the worker bootstrap setup script
     /vagran/scripts/k8s-04b-workers-tls.sh
     
     # On master-1 check the worker node Certificate request and approve it

@@ -12,7 +12,6 @@ MASTER_IP_START = 10
 NODE_IP_START = 20
 LB_IP_START = 30
 
-
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/bionic64"
 
@@ -31,9 +30,8 @@ Vagrant.configure("2") do |config|
     node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
 
     node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
-    node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
-      s.args = ["enp0s8"]
-    end
+    node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
+
     node.vm.provision "setup-haproxy", type: "shell", path: "scripts/k8s-00-loadbalancer.sh"
 
   end # loadbalancer
@@ -55,9 +53,10 @@ Vagrant.configure("2") do |config|
       node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
       
       node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
-      node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
-        s.args = ["enp0s8"]
-      end
+      node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
+
+      node.vm.provision "allow-bridge-nf-traffic", type: "shell", inline: $allow_bridge_nf_traffic
+      node.vm.provision "install-docker", type: "shell", inline: $install_docker
 
     end
   end # masters
@@ -78,9 +77,8 @@ Vagrant.configure("2") do |config|
       node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
       
       node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
-      node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
-        s.args = ["enp0s8"]
-      end
+      node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
+
       node.vm.provision "allow-bridge-nf-traffic", type: "shell", inline: $allow_bridge_nf_traffic
       node.vm.provision "install-docker", type: "shell", inline: $install_docker
 
@@ -98,21 +96,18 @@ SCRIPT
 
 $setup_hosts = <<SCRIPT
 set -x
-IFNAME=$1
-ADDRESS="$(ip -4 addr show $IFNAME | grep "inet" | head -1 |awk '{print $2}' | cut -d/ -f1)"
-sed -e "s/^.*${HOSTNAME}.*/${ADDRESS} ${HOSTNAME} ${HOSTNAME}.local/" -i /etc/hosts
-
-# remove ubuntu-bionic entry
+# remove 127.0.1.1 and ubuntu-bionic entry
+sed -e '/^127.0.1.1.*/d' -i /etc/hosts
 sed -e '/^.*ubuntu-bionic.*/d' -i /etc/hosts
 
 # Update /etc/hosts about other hosts
 cat >> /etc/hosts <<EOF
+192.168.5.30  kubernetes lb loadbalancer
 192.168.5.11  master-1
 192.168.5.12  master-2
 192.168.5.13  master-3
 192.168.5.21  worker-1
 192.168.5.22  worker-2
-192.168.5.30  lb
 EOF
 SCRIPT
 
