@@ -27,6 +27,9 @@ Vagrant.configure("2") do |config|
     node.vm.network :private_network, ip: IP_NW + "#{LB_IP_START}"
 	  node.vm.network "forwarded_port", guest: 22, host: 2730
 
+    node.vm.provision "environment-file", type: "file", source: "kubernetes-the-scripted-way.env", destination: "/tmp/kubernetes-the-scripted-way.sh"
+    node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
+
     node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
     node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
       s.args = ["enp0s8"]
@@ -48,6 +51,9 @@ Vagrant.configure("2") do |config|
       node.vm.network :private_network, ip: IP_NW + "#{MASTER_IP_START + i}"
       node.vm.network "forwarded_port", guest: 22, host: "#{2710 + i}"
 
+      node.vm.provision "environment-file", type: "file", source: "kubernetes-the-scripted-way.env", destination: "/tmp/kubernetes-the-scripted-way.sh"
+      node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
+      
       node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
       node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
         s.args = ["enp0s8"]
@@ -68,6 +74,9 @@ Vagrant.configure("2") do |config|
       node.vm.network :private_network, ip: IP_NW + "#{NODE_IP_START + i}"
       node.vm.network "forwarded_port", guest: 22, host: "#{2720 + i}"
 
+      node.vm.provision "environment-file", type: "file", source: "kubernetes-the-scripted-way.env", destination: "/tmp/kubernetes-the-scripted-way.sh"
+      node.vm.provision "setup-environment", type: "shell", inline: "mv /tmp/kubernetes-the-scripted-way.sh /etc/profile.d/"
+      
       node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
       node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts do |s|
         s.args = ["enp0s8"]
@@ -78,6 +87,7 @@ Vagrant.configure("2") do |config|
     end
   end # workers
 
+end
 
 $setup_ssh = <<SCRIPT
 set -x
@@ -127,5 +137,3 @@ grep -qxF "${SYSCTL_CONF_LINE}" /etc/sysctl.conf || (echo ${SYSCTL_CONF_LINE} | 
 SYSCTL_CONF_LINE="net.bridge.bridge-nf-call-arptables = 1"
 grep -qxF "${SYSCTL_CONF_LINE}" /etc/sysctl.conf || (echo ${SYSCTL_CONF_LINE} | tee -a /etc/sysctl.conf)
 SCRIPT
-
-end
