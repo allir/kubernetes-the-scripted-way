@@ -31,7 +31,7 @@ Vagrant.configure("2") do |config|
     node.vm.provision "setup-ssh", type: "shell", inline: $setup_ssh, privileged: false
     node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
 
-    node.vm.provision "setup-haproxy", type: "shell", path: "scripts/k8s-00-loadbalancer.sh"
+    node.vm.provision "setup-haproxy", type: "shell", inline: $setup_loadbalancer
 
   end # loadbalancer
 
@@ -42,7 +42,7 @@ Vagrant.configure("2") do |config|
       node.vm.provider "virtualbox" do |vb|
         vb.name = "kubernetes-ha-master-#{i}"
         vb.memory = 1024
-        vb.cpus = 1
+        vb.cpus = 2
       end
       node.vm.hostname = "master-#{i}"
       node.vm.network :private_network, ip: IP_NW + "#{MASTER_IP_START + i}"
@@ -116,21 +116,87 @@ SCRIPT
 
 $install_docker = <<SCRIPT
 set -x
+# Install docker
 curl -fsSL https://get.docker.com | bash
+
+# Give vagrant user access to docker socket
+usermod -aG docker vagrant
+
+# Setup daemon
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+mkdir -p /etc/systemd/system/docker.service.d
+
+# Restart docker
+systemctl daemon-reload
+systemctl restart docker
 SCRIPT
 
 
 $allow_bridge_nf_traffic = <<SCRIPT
-set -x
-modprobe br_netfilter
-sysctl net.bridge.bridge-nf-call-iptables=1
-sysctl net.bridge.bridge-nf-call-ip6tables=1
-sysctl net.bridge.bridge-nf-call-arptables=1
+set -euxo pipefail
+lsmod | grep br_netfilter || modprobe br_netfilter
 
-SYSCTL_CONF_LINE="net.bridge.bridge-nf-call-iptables = 1"
-grep -qxF "${SYSCTL_CONF_LINE}" /etc/sysctl.conf || (echo ${SYSCTL_CONF_LINE} | tee -a /etc/sysctl.conf)
-SYSCTL_CONF_LINE="net.bridge.bridge-nf-call-ip6tables = 1"
-grep -qxF "${SYSCTL_CONF_LINE}" /etc/sysctl.conf || (echo ${SYSCTL_CONF_LINE} | tee -a /etc/sysctl.conf)
-SYSCTL_CONF_LINE="net.bridge.bridge-nf-call-arptables = 1"
-grep -qxF "${SYSCTL_CONF_LINE}" /etc/sysctl.conf || (echo ${SYSCTL_CONF_LINE} | tee -a /etc/sysctl.conf)
+cat <<EOF > /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+
+sysctl --system
+SCRIPT
+
+
+$setup_loadbalancer = <<SCRIPT
+set -euxo pipefail
+
+LB_IP=$(ip addr show enp0s8 | grep "inet " | awk '{print $2}' | cut -d / -f 1)
+MASTER_NODES=$(grep master /etc/hosts | awk '{print $2}')
+
+## Run on Loadbalancer
+
+#Install HAProxy
+sudo apt-get -qq update && sudo apt-get -qq install -y haproxy
+
+cat <<EOF | sudo tee -a /etc/haproxy/haproxy.cfg 
+
+listen stats
+    bind :9999
+    mode http
+    stats enable
+    stats hide-version
+    stats uri /stats
+
+frontend kubernetes
+    bind ${LB_IP}:6443
+    mode tcp
+    option tcplog
+    stats uri /k8sstats
+    default_backend kubernetes-control-plane
+
+backend kubernetes-control-plane
+    mode tcp
+    option tcp-check
+    balance roundrobin
+EOF
+
+for instance in ${MASTER_NODES}; do
+  cat <<EOF | sudo tee -a /etc/haproxy/haproxy.cfg
+    server ${instance} $(grep ${instance} /etc/hosts | awk '{print $1}'):6443 check fall 3 rise 2
+EOF
+done
+
+sudo systemctl restart haproxy
+systemctl status --no-pager haproxy
+
+# Verify
+nc -zv ${LB_IP} 6443
 SCRIPT
