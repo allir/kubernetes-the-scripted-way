@@ -79,6 +79,8 @@ sudo mkdir -p /var/lib/kubernetes/
 sudo cp ca.pem ca-key.pem kubernetes.pem kubernetes-key.pem \
   service-account-key.pem service-account.pem \
   etcd-server-key.pem etcd-server.pem \
+  front-proxy-ca.pem front-proxy-ca-key.pem \
+  front-proxy-client.pem front-proxy-client-key.pem \
   encryption-config.yaml /var/lib/kubernetes/
 
 INTERNAL_IP=$(ip addr show enp0s8 | grep "inet " | awk '{print $2}' | cut -d / -f 1)
@@ -92,16 +94,13 @@ Documentation=https://github.com/kubernetes/kubernetes
 ExecStart=/usr/local/bin/kube-apiserver \\
   --advertise-address=${INTERNAL_IP} \\
   --allow-privileged=true \\
-  --apiserver-count=3 \\
   --audit-log-maxage=30 \\
   --audit-log-maxbackup=3 \\
   --audit-log-maxsize=100 \\
   --audit-log-path=/var/log/audit.log \\
   --authorization-mode=Node,RBAC \\
-  --bind-address=0.0.0.0 \\
   --client-ca-file=/var/lib/kubernetes/ca.pem \\
-  --enable-admission-plugins=NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \\
-  --enable-swagger-ui=true \\
+  --enable-admission-plugins=NodeRestriction \\
   --enable-bootstrap-token-auth=true \\
   --etcd-cafile=/var/lib/kubernetes/ca.pem \\
   --etcd-certfile=/var/lib/kubernetes/etcd-server.pem \\
@@ -113,7 +112,13 @@ ExecStart=/usr/local/bin/kube-apiserver \\
   --kubelet-client-certificate=/var/lib/kubernetes/kubernetes.pem \\
   --kubelet-client-key=/var/lib/kubernetes/kubernetes-key.pem \\
   --kubelet-https=true \\
-  --runtime-config=api/all=true \\
+  --proxy-client-cert-file=/var/lib/kubernetes/front-proxy-client.pem \\
+  --proxy-client-key-file=/var/lib/kubernetes/front-proxy-client-key.pem \\
+  --requestheader-client-ca-file=/var/lib/kubernetes/front-proxy-ca.pem \\
+  --requestheader-allowed-names=front-proxy-client \\
+  --requestheader-extra-headers-prefix=X-Remote-Extra- \\
+  --requestheader-group-headers=X-Remote-Group \\
+  --requestheader-username-headers=X-Remote-User \\
   --service-account-key-file=/var/lib/kubernetes/service-account.pem \\
   --service-cluster-ip-range=${CLUSTER_SERVICE_CIDR} \\
   --service-node-port-range=30000-32767 \\
@@ -137,13 +142,14 @@ Documentation=https://github.com/kubernetes/kubernetes
 
 [Service]
 ExecStart=/usr/local/bin/kube-controller-manager \\
-  --address=0.0.0.0 \\
+  --client-ca-file=/var/lib/kubernetes/ca.pem \\
   --cluster-cidr=${CLUSTER_CIDR} \\
   --cluster-name=kubernetes \\
   --cluster-signing-cert-file=/var/lib/kubernetes/ca.pem \\
   --cluster-signing-key-file=/var/lib/kubernetes/ca-key.pem \\
   --kubeconfig=/var/lib/kubernetes/kube-controller-manager.kubeconfig \\
   --leader-elect=true \\
+  --requestheader-client-ca-file=/var/lib/kubernetes/front-proxy-ca.pem \\
   --root-ca-file=/var/lib/kubernetes/ca.pem \\
   --service-account-private-key-file=/var/lib/kubernetes/service-account-key.pem \\
   --service-cluster-ip-range=${CLUSTER_SERVICE_CIDR} \\
@@ -159,15 +165,6 @@ EOF
 # Kube Scheduler
 sudo cp kube-scheduler.kubeconfig /var/lib/kubernetes/
 
-cat <<EOF | sudo tee /etc/kubernetes/config/kube-scheduler.yaml
-apiVersion: kubescheduler.config.k8s.io/v1alpha1
-kind: KubeSchedulerConfiguration
-clientConnection:
-  kubeconfig: "/var/lib/kubernetes/kube-scheduler.kubeconfig"
-leaderElection:
-  leaderElect: true
-EOF
-
 cat <<EOF | sudo tee /etc/systemd/system/kube-scheduler.service
 [Unit]
 Description=Kubernetes Scheduler
@@ -175,7 +172,8 @@ Documentation=https://github.com/kubernetes/kubernetes
 
 [Service]
 ExecStart=/usr/local/bin/kube-scheduler \\
-  --config=/etc/kubernetes/config/kube-scheduler.yaml \\
+  --kubeconfig=/var/lib/kubernetes/kube-scheduler.kubeconfig \\
+  --leader-elect=true \\
   --v=2
 Restart=on-failure
 RestartSec=5
@@ -193,7 +191,7 @@ systemctl status --no-pager kube-apiserver kube-controller-manager kube-schedule
 
 # Verify
 echo "Wait for API Server to be ready"
-sleep 10
+sleep 7
 kubectl get componentstatuses --kubeconfig admin.kubeconfig
 kubectl get nodes --kubeconfig admin.kubeconfig
 curl --cacert ca.pem https://${LOADBALANCER_IP}:6443/version

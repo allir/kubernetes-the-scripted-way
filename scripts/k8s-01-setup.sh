@@ -20,7 +20,7 @@ set -euxo pipefail
   sudo mv kubectl /usr/local/bin/
 }
 
-{ # Setup CA
+{ # Setup CAs 
 cat > ca-config.json <<EOF
 {
   "signing": {
@@ -28,6 +28,14 @@ cat > ca-config.json <<EOF
       "expiry": "8760h"
     },
     "profiles": {
+      "server": {
+        "usages": ["signing", "key encipherment", "server auth"],
+        "expiry": "8760h"
+      },
+      "client": {
+        "usages": ["signing", "key encipherment", "client auth"],
+        "expiry": "8760h"
+      },
       "kubernetes": {
         "usages": ["signing", "key encipherment", "server auth", "client auth"],
         "expiry": "8760h"
@@ -60,6 +68,30 @@ cat > ca-csr.json <<EOF
 EOF
 
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+
+cat > front-proxy-ca-csr.json <<EOF
+{
+  "CA": {
+    "expiry": "87660h",
+    "pathlen": 0
+  },
+  "CN": "front-proxy-ca",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "Kubernetes",
+      "OU": "CA"
+    }
+  ]
+}
+EOF
+
+cfssl gencert -initca front-proxy-ca-csr.json | cfssljson -bare front-proxy-ca
 }
 
 
@@ -86,7 +118,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=client \
   admin-csr.json | cfssljson -bare admin
 }
 
@@ -145,7 +177,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=client \
   kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
 }
 
@@ -173,7 +205,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=client \
   kube-proxy-csr.json | cfssljson -bare kube-proxy
 }
 
@@ -201,10 +233,9 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=client \
   kube-scheduler-csr.json | cfssljson -bare kube-scheduler
 }
-
 
 
 { # Generate Kubernetes API Certificate
@@ -239,7 +270,7 @@ cfssl gencert \
   kubernetes-csr.json | cfssljson -bare kubernetes
 }
 
-{ # Generate ETCD Server Certificate
+{ # Generate ETCD Server/Client Certificate
 cat > kubernetes-csr.json <<EOF
 {
   "CN": "etcd-server",
@@ -291,8 +322,35 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=client \
   service-account-csr.json | cfssljson -bare service-account
+}
+
+{ # Generate Front-Proxy Client Certificate
+cat > front-proxy-client-csr.json <<EOF
+{
+  "CN": "front-proxy-client",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "system:kube-scheduler",
+      "OU": "Kubernetes The Hard Way"
+    }
+  ]
+}
+EOF
+
+cfssl gencert \
+  -ca=front-proxy-ca.pem \
+  -ca-key=front-proxy-ca-key.pem \
+  -config=ca-config.json \
+  -profile=client \
+  front-proxy-client-csr.json | cfssljson -bare front-proxy-client
 }
 
 
@@ -306,7 +364,9 @@ for instance in $MASTER_NODES; do
     ${instance}.pem ${instance}-key.pem \
     admin-key.pem admin.pem \
     service-account-key.pem service-account.pem \
-    etcd-server-key.pem etcd-server.pem ${instance}:~/
+    etcd-server-key.pem etcd-server.pem \
+    front-proxy-ca.pem front-proxy-ca-key.pem \
+    front-proxy-client.pem front-proxy-client-key.pem ${instance}:~/
 done
 }
 
