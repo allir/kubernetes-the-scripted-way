@@ -65,6 +65,7 @@ authorization:
 clusterDomain: "cluster.local"
 clusterDNS:
   - "${KUBERNETES_DNS_IP}"
+rotateCertificates: true
 resolvConf: "/run/systemd/resolve/resolv.conf"
 runtimeRequestTimeout: "15m"
 EOF
@@ -83,8 +84,7 @@ ExecStart=/usr/local/bin/kubelet \\
   --image-pull-progress-deadline=2m \\
   --kubeconfig=/var/lib/kubelet/kubeconfig \\
   --cert-dir=/var/lib/kubelet/pki/ \\
-  --rotate-certificates=true \\
-  --rotate-server-certificates=true \\
+  --cgroup-driver=systemd \\
   --network-plugin=cni \\
   --register-node=true \\
   --v=2

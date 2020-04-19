@@ -65,6 +65,7 @@ ExecStart=/usr/local/bin/kubelet \\
   --image-pull-progress-deadline=2m \\
   --kubeconfig=/var/lib/kubelet/kubeconfig \\
   --network-plugin=cni \\
+  --cgroup-driver=systemd \\
   --register-node=true \\
   --v=2
 Restart=on-failure
@@ -111,6 +112,6 @@ systemctl status --no-pager kubelet kube-proxy
 # Label master nodes with role
 if [[ ${HOSTNAME} == "master-"* ]]; then
   # Wait for the node to show up
-  sleep 5
+  sleep 7
   kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/master=
 fi
