@@ -15,7 +15,9 @@ tar -xvf etcd-${ETCD_VERSION}-linux-amd64.tar.gz
 sudo mv etcd-${ETCD_VERSION}-linux-amd64/etcd* /usr/local/bin/
 
 sudo mkdir -p /etc/etcd /var/lib/etcd
-sudo cp ca.pem etcd-server-key.pem etcd-server.pem /etc/etcd/
+sudo cp etcd-ca.pem etcd-server-${HOSTNAME}.pem etcd-server-${HOSTNAME}-key.pem \
+  etcd-peer-${HOSTNAME}.pem etcd-peer-${HOSTNAME}-key.pem \
+  etcd-healthcheck-client.pem etcd-healthcheck-client-key.pem /etc/etcd/
 
 ETCD_NAME=$(hostname -s)
 INTERNAL_IP=$(ip addr show enp0s8 | grep "inet " | awk '{print $2}' | cut -d / -f 1)
@@ -29,18 +31,18 @@ Documentation=https://github.com/coreos
 Type=notify
 ExecStart=/usr/local/bin/etcd \\
   --name ${ETCD_NAME} \\
-  --cert-file=/etc/etcd/etcd-server.pem \\
-  --key-file=/etc/etcd/etcd-server-key.pem \\
-  --peer-cert-file=/etc/etcd/etcd-server.pem \\
-  --peer-key-file=/etc/etcd/etcd-server-key.pem \\
-  --trusted-ca-file=/etc/etcd/ca.pem \\
-  --peer-trusted-ca-file=/etc/etcd/ca.pem \\
-  --peer-client-cert-auth \\
-  --client-cert-auth \\
+  --advertise-client-urls https://${INTERNAL_IP}:2379 \\
+  --cert-file=/etc/etcd/etcd-server-${HOSTNAME}.pem \\
+  --key-file=/etc/etcd/etcd-server-${HOSTNAME}-key.pem \\
+  --peer-client-cert-auth=true \\
+  --peer-trusted-ca-file=/etc/etcd/etcd-ca.pem \\
+  --peer-cert-file=/etc/etcd/etcd-peer-${HOSTNAME}.pem \\
+  --peer-key-file=/etc/etcd/etcd-peer-${HOSTNAME}-key.pem \\
+  --client-cert-auth=true \\
+  --trusted-ca-file=/etc/etcd/etcd-ca.pem \\
   --initial-advertise-peer-urls https://${INTERNAL_IP}:2380 \\
   --listen-peer-urls https://${INTERNAL_IP}:2380 \\
   --listen-client-urls https://${INTERNAL_IP}:2379,https://127.0.0.1:2379 \\
-  --advertise-client-urls https://${INTERNAL_IP}:2379 \\
   --initial-cluster-token etcd-cluster-0 \\
   --initial-cluster ${ETCD_CLUSTER} \\
   --initial-cluster-state new \\
@@ -59,9 +61,9 @@ sudo systemctl start etcd
 
 sudo ETCDCTL_API=3 etcdctl member list \
   --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/etcd/ca.pem \
-  --cert=/etc/etcd/etcd-server.pem \
-  --key=/etc/etcd/etcd-server-key.pem
+  --cacert=/etc/etcd/etcd-ca.pem \
+  --cert=/etc/etcd/etcd-healthcheck-client.pem \
+  --key=/etc/etcd/etcd-healthcheck-client-key.pem
 }
 
 { # Bootstrap Control Plane Components
@@ -77,8 +79,10 @@ sudo mv kubectl kube-apiserver kube-controller-manager kube-scheduler /usr/local
 # Kubernetes API
 sudo mkdir -p /var/lib/kubernetes/
 sudo cp ca.pem ca-key.pem kubernetes.pem kubernetes-key.pem \
+  apiserver-kubelet-client.pem apiserver-kubelet-client-key.pem \
+  apiserver-etcd-client.pem apiserver-etcd-client-key.pem \
   service-account-key.pem service-account.pem \
-  etcd-server-key.pem etcd-server.pem \
+  etcd-ca.pem \
   front-proxy-ca.pem front-proxy-ca-key.pem \
   front-proxy-client.pem front-proxy-client-key.pem \
   encryption-config.yaml /var/lib/kubernetes/
@@ -102,15 +106,15 @@ ExecStart=/usr/local/bin/kube-apiserver \\
   --client-ca-file=/var/lib/kubernetes/ca.pem \\
   --enable-admission-plugins=NodeRestriction \\
   --enable-bootstrap-token-auth=true \\
-  --etcd-cafile=/var/lib/kubernetes/ca.pem \\
-  --etcd-certfile=/var/lib/kubernetes/etcd-server.pem \\
-  --etcd-keyfile=/var/lib/kubernetes/etcd-server-key.pem \\
+  --etcd-cafile=/var/lib/kubernetes/etcd-ca.pem \\
+  --etcd-certfile=/var/lib/kubernetes/apiserver-etcd-client.pem \\
+  --etcd-keyfile=/var/lib/kubernetes/apiserver-etcd-client-key.pem \\
   --etcd-servers=${ETCD_SERVERS} \\
   --event-ttl=1h \\
   --encryption-provider-config=/var/lib/kubernetes/encryption-config.yaml \\
   --kubelet-certificate-authority=/var/lib/kubernetes/ca.pem \\
-  --kubelet-client-certificate=/var/lib/kubernetes/kubernetes.pem \\
-  --kubelet-client-key=/var/lib/kubernetes/kubernetes-key.pem \\
+  --kubelet-client-certificate=/var/lib/kubernetes/apiserver-kubelet-client.pem \\
+  --kubelet-client-key=/var/lib/kubernetes/apiserver-kubelet-client-key.pem \\
   --kubelet-https=true \\
   --proxy-client-cert-file=/var/lib/kubernetes/front-proxy-client.pem \\
   --proxy-client-key-file=/var/lib/kubernetes/front-proxy-client-key.pem \\

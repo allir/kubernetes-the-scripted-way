@@ -36,7 +36,7 @@ cat > ca-config.json <<EOF
         "usages": ["signing", "key encipherment", "client auth"],
         "expiry": "8760h"
       },
-      "kubernetes": {
+      "server-client": {
         "usages": ["signing", "key encipherment", "server auth", "client auth"],
         "expiry": "8760h"
       }
@@ -51,7 +51,7 @@ cat > ca-csr.json <<EOF
     "expiry": "87660h",
     "pathlen": 0
   },
-  "CN": "Kubernetes",
+  "CN": "kubernetes",
   "key": {
     "algo": "rsa",
     "size": 2048
@@ -92,6 +92,30 @@ cat > front-proxy-ca-csr.json <<EOF
 EOF
 
 cfssl gencert -initca front-proxy-ca-csr.json | cfssljson -bare front-proxy-ca
+
+cat > etcd-ca-csr.json <<EOF
+{
+  "CA": {
+    "expiry": "87660h",
+    "pathlen": 0
+  },
+  "CN": "etcd-ca",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "Kubernetes",
+      "OU": "CA"
+    }
+  ]
+}
+EOF
+
+cfssl gencert -initca etcd-ca-csr.json | cfssljson -bare etcd-ca
 }
 
 
@@ -148,7 +172,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -profile=kubernetes \
+  -profile=server-client \
   -hostname=${instance},${INTERNAL_IP} \
   ${instance}-csr.json | cfssljson -bare ${instance}
 done
@@ -238,7 +262,7 @@ cfssl gencert \
 }
 
 
-{ # Generate Kubernetes API Certificate
+{ # Generate Kubernetes API (kube-apiserver) Server Certificate
 KUBERNETES_HOSTNAMES=kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local
 MASTER_NODE_IPS=$(for ip in $(grep master /etc/hosts | awk '{print $1}'); do printf ${ip},; done)
 MASTER_NODE_IPS=${MASTER_NODE_IPS%?}
@@ -266,14 +290,72 @@ cfssl gencert \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
   -hostname=${KUBERNETES_SERVICE_IP},${MASTER_NODE_IPS},${LOADBALANCER_IP},127.0.0.1,${KUBERNETES_HOSTNAMES} \
-  -profile=kubernetes \
+  -profile=server \
   kubernetes-csr.json | cfssljson -bare kubernetes
 }
 
-{ # Generate ETCD Server/Client Certificate
-cat > kubernetes-csr.json <<EOF
+
+{ # Generate kube-apiserver kublet client certificate
+cat > apiserver-kubelet-client-csr.json <<EOF
 {
-  "CN": "etcd-server",
+  "CN": "kube-apiserver-kubelet-client",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "system:masters",
+      "OU": "Kubernetes The Hard Way"
+    }
+  ]
+}
+EOF
+
+cfssl gencert \
+  -ca=ca.pem \
+  -ca-key=ca-key.pem \
+  -config=ca-config.json \
+  -profile=client \
+  apiserver-kubelet-client-csr.json | cfssljson -bare apiserver-kubelet-client
+}
+
+
+{ # Generate kube-apiserver etcd client certificate
+cat > apiserver-etcd-client-csr.json <<EOF
+{
+  "CN": "kube-apiserver-etcd-client",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "system:masters",
+      "OU": "Kubernetes The Hard Way"
+    }
+  ]
+}
+EOF
+
+cfssl gencert \
+  -ca=etcd-ca.pem \
+  -ca-key=etcd-ca-key.pem \
+  -config=ca-config.json \
+  -profile=client \
+  apiserver-etcd-client-csr.json | cfssljson -bare apiserver-etcd-client
+}
+
+
+{ # Generate ETCD Server Certificates
+for instance in $MASTER_NODES; do
+cat > etcd-server-${instance}-csr.json <<EOF
+{
+  "CN": "${instance}",
   "key": {
     "algo": "rsa",
     "size": 2048
@@ -289,13 +371,76 @@ cat > kubernetes-csr.json <<EOF
 }
 EOF
 
+INTERNAL_IP=$(grep ${instance} /etc/hosts | head -1 | cut -d' ' -f1)
+
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
+  -ca=etcd-ca.pem \
+  -ca-key=etcd-ca-key.pem \
   -config=ca-config.json \
-  -hostname=${MASTER_NODE_IPS},127.0.0.1 \
-  -profile=kubernetes \
-  kubernetes-csr.json | cfssljson -bare etcd-server
+  -hostname=${instance},localhost,${INTERNAL_IP},127.0.0.1 \
+  -profile=server-client \
+  etcd-server-${instance}-csr.json | cfssljson -bare etcd-server-${instance}
+done
+}
+
+
+{ # Generate ETCD Peer Certificates
+for instance in $MASTER_NODES; do
+cat > etcd-peer-${instance}-csr.json <<EOF
+{
+  "CN": "${instance}",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "Kubernetes",
+      "OU": "Kubernetes The Hard Way"
+    }
+  ]
+}
+EOF
+
+INTERNAL_IP=$(grep ${instance} /etc/hosts | head -1 | cut -d' ' -f1)
+
+cfssl gencert \
+  -ca=etcd-ca.pem \
+  -ca-key=etcd-ca-key.pem \
+  -config=ca-config.json \
+  -hostname=${instance},localhost,${INTERNAL_IP},127.0.0.1 \
+  -profile=server-client \
+  etcd-peer-${instance}-csr.json | cfssljson -bare etcd-peer-${instance}
+done
+}
+
+{ # Generate ETCD healthcheck client Certificates
+cat > etcd-healthcheck-client-csr.json <<EOF
+{
+  "CN": "kube-etcd-healthcheck-client",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "IS",
+      "L": "Reykjavik",
+      "O": "system:masters",
+      "OU": "Kubernetes The Hard Way"
+    }
+  ]
+}
+EOF
+
+cfssl gencert \
+  -ca=etcd-ca.pem \
+  -ca-key=etcd-ca-key.pem \
+  -config=ca-config.json \
+  -profile=client \
+  etcd-healthcheck-client-csr.json | cfssljson -bare etcd-healthcheck-client
 }
 
 
@@ -360,11 +505,18 @@ for instance in $WORKER_NODES; do
 done
 
 for instance in $MASTER_NODES; do
-  scp -o StrictHostKeyChecking=no ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
+  scp -o StrictHostKeyChecking=no \
+    ca.pem ca-key.pem \
+    kubernetes-key.pem kubernetes.pem \
+    apiserver-kubelet-client-key.pem apiserver-kubelet-client.pem \
+    apiserver-etcd-client-key.pem apiserver-etcd-client.pem \
     ${instance}.pem ${instance}-key.pem \
     admin-key.pem admin.pem \
     service-account-key.pem service-account.pem \
-    etcd-server-key.pem etcd-server.pem \
+    etcd-ca-key.pem etcd-ca.pem \
+    etcd-server-${instance}-key.pem etcd-server-${instance}.pem \
+    etcd-peer-${instance}-key.pem etcd-peer-${instance}.pem \
+    etcd-healthcheck-client-key.pem etcd-healthcheck-client.pem \
     front-proxy-ca.pem front-proxy-ca-key.pem \
     front-proxy-client.pem front-proxy-client-key.pem ${instance}:~/
 done
