@@ -148,7 +148,7 @@ vagrant ssh master-1
 
 ### Smoke Tests
 
-Let's set up an NGINX deployment and service as a smoke test
+Let's set up an NGINX deployment and service as a smoke test. This can be run from `master-1` node or using the `admin.kubeconfig` in the repository folder after provisioning.
 
 ```bash
 kubectl create deployment nginx --image=nginx

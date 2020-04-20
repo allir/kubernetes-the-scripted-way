@@ -664,15 +664,22 @@ done
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
-    --server=https://${LOADBALANCER_IP}:6443
+    --server=https://${LOADBALANCER_IP}:6443 \
+    --kubeconfig=admin.kubeconfig
 
   kubectl config set-credentials admin \
+    --embed-certs=true \
     --client-certificate=admin.pem \
-    --client-key=admin-key.pem
+    --client-key=admin-key.pem \
+    --kubeconfig=admin.kubeconfig
 
   kubectl config set-context kubernetes-the-hard-way \
     --cluster=kubernetes-the-hard-way \
-    --user=admin
+    --user=admin \
+    --kubeconfig=admin.kubeconfig
 
   kubectl config use-context kubernetes-the-hard-way
+
+  # Copy the kubeconfig to the shared Vagrant directory
+  cp admin.kubeconfig /vagrant/
 }
