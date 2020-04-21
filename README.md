@@ -220,3 +220,12 @@ kubectl logs deployment/nginx
 ### Conclusion
 
 Awesome!
+
+## Cleanup
+
+Destroy the machines and clean up temporary files from the repository.
+
+```bash
+vagrant destroy -f
+git clean -xf
+```
