@@ -122,11 +122,11 @@ EOF
 }
 
 { # Setting up Networking and DNS
-  kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')&env.IPALLOC_RANGE=${CLUSTER_POD_CIDR}"
+  kubectl apply --kubeconfig admin.kubeconfig -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version --kubeconfig admin.kubeconfig | base64 | tr -d '\n')&env.IPALLOC_RANGE=${CLUSTER_POD_CIDR}"
   
-  curl -s https://raw.githubusercontent.com/coredns/deployment/master/kubernetes/coredns.yaml.sed | sed -E "s/# replicas.*$/replicas: 2/" | sed "s/CLUSTER_DNS_IP/${KUBERNETES_DNS_IP}/" | kubectl apply -f -
+  curl -s https://raw.githubusercontent.com/coredns/deployment/master/kubernetes/coredns.yaml.sed | sed -E "s/# replicas.*$/replicas: 2/" | sed "s/CLUSTER_DNS_IP/${KUBERNETES_DNS_IP}/" | kubectl apply --kubeconfig admin.kubeconfig -f -
   # Patch the deployment to mount the hosts /etc/hosts file and serve it in the below config. Otherwise the master/worker nodes are note resolvable from within the cluster pod network
-  kubectl -n kube-system patch deployment coredns --patch '{"spec": {"template": {"spec": {"containers": [{"name": "coredns", "volumeMounts": [{"name": "hosts-volume", "mountPath": "/etc/hosts"}] }], "volumes": [{ "name": "hosts-volume", "hostPath": {"path": "/etc/hosts"} }] } } } }'
+  kubectl -n kube-system --kubeconfig admin.kubeconfig patch deployment coredns --patch '{"spec": {"template": {"spec": {"containers": [{"name": "coredns", "volumeMounts": [{"name": "hosts-volume", "mountPath": "/etc/hosts"}] }], "volumes": [{ "name": "hosts-volume", "hostPath": {"path": "/etc/hosts"} }] } } } }'
 
   cat <<EOF | kubectl apply --kubeconfig admin.kubeconfig -f -
 apiVersion: v1

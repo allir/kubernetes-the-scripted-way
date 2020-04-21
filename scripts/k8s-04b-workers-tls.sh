@@ -66,6 +66,7 @@ clusterDomain: "cluster.local"
 clusterDNS:
   - "${KUBERNETES_DNS_IP}"
 rotateCertificates: true
+serverTLSBootstrap: true
 resolvConf: "/run/systemd/resolve/resolv.conf"
 runtimeRequestTimeout: "15m"
 EOF
