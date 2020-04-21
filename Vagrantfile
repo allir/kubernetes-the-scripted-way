@@ -86,10 +86,18 @@ Vagrant.configure("2") do |config|
 
 end
 
+
 $setup_ssh = <<SCRIPT
 set -x
-cp /vagrant/files/id_rsa* ~/.ssh/
-cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+if [ -r /vagrant/ssh/id_ed25519 ]; then
+  cp /vagrant/ssh/id_* ~/.ssh/
+  cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+else  
+  ssh-keygen -t ed25519 -a 100 -q -N "" -f ~/.ssh/id_ed25519
+  cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+  mkdir -p /vagrant/ssh
+  cp ~/.ssh/id_* /vagrant/ssh/
+fi
 SCRIPT
 
 
