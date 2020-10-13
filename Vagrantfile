@@ -12,7 +12,7 @@ WORKER_IP_START = 20
 LB_IP_START = 30
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/bionic64"
+  config.vm.box = "ubuntu/focal64"
 
   # Provision Load Balancer Node
   config.vm.define "loadbalancer" do |node|
@@ -103,8 +103,9 @@ SCRIPT
 
 $setup_hosts = <<SCRIPT
 set -x
-# remove 127.0.1.1 and ubuntu-bionic entry
+# remove 127.0.1.1, 127.0.2.1 and ubuntu-bionic entry
 sed -e '/^127.0.1.1.*/d' -i /etc/hosts
+sed -e '/^127.0.2.1.*/d' -i /etc/hosts
 sed -e '/^.*ubuntu-bionic.*/d' -i /etc/hosts
 
 # Update /etc/hosts about other hosts

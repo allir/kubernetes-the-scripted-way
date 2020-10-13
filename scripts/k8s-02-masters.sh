@@ -196,6 +196,13 @@ systemctl status --no-pager kube-apiserver kube-controller-manager kube-schedule
 # Verify
 echo "Wait for API Server to be ready"
 sleep 7
-kubectl get componentstatuses --kubeconfig admin.kubeconfig
+# kubectl get componentstatuses --kubeconfig admin.kubeconfig --- DEPRECATED
+# Get the kubernetes API health status, includes etcd health.
+curl -k https://localhost:6443/readyz?verbose
+# Get the kube-scheduler health status
+curl localhost:10251/readyz?verbose
+# Get the kube-controller-manager health status
+curl localhost:10252/readyz?verbose
+
 kubectl get nodes --kubeconfig admin.kubeconfig
 curl --cacert ca.pem https://${LOADBALANCER_IP}:6443/version
