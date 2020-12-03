@@ -1,6 +1,6 @@
 # kubernetes-the-scripted-way
 
-Kubernetes-the-hard-way (KTHW) on Vagrant... Scripted
+[Kubernetes-the-hard-way (KTHW)](https://github.com/kelseyhightower/kubernetes-the-hard-way) on Vagrant... Scripted
 
 ## Requirements
 
