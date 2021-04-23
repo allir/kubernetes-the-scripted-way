@@ -62,6 +62,8 @@ Requires=containerd.service
 [Service]
 ExecStart=/usr/local/bin/kubelet \\
   --config=/var/lib/kubelet/kubelet-config.yaml \\
+  --container-runtime=remote \\
+  --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock \\
   --image-pull-progress-deadline=2m \\
   --kubeconfig=/var/lib/kubelet/kubeconfig \\
   --network-plugin=cni \\
@@ -109,9 +111,9 @@ sudo systemctl start kubelet kube-proxy
 systemctl status --no-pager kubelet kube-proxy
 }
 
-# Label master nodes with role
-if [[ ${HOSTNAME} == "master-"* ]]; then
+# Label control-plane nodes with role
+if [[ ${HOSTNAME} == "control-plane-"* ]]; then
   # Wait for the node to show up
   sleep 7
-  kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/master=
+  kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/control-plane=
 fi

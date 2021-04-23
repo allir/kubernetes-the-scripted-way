@@ -1,15 +1,15 @@
 # -*- mode: ruby -*-
 # vi:set ft=ruby sw=2 ts=2 sts=2:
 
-# Define the number of master and worker nodes
-NUM_MASTER_NODE = 3
+# Define the number of control-plane and worker nodes
+NUM_CONTROL_PLANE_NODE = 3
 NUM_WORKER_NODE = 2
 
 # Node network
 IP_NW = "192.168.5."
-MASTER_IP_START = 10
-WORKER_IP_START = 20
-LB_IP_START = 30
+CONTROL_PLANE_IP_START = 100
+WORKER_IP_START = 200
+LB_IP_START = 10
 
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/focal64"
@@ -35,17 +35,17 @@ Vagrant.configure("2") do |config|
 
   end # loadbalancer
 
-  # Provision Master Nodes
-  (1..NUM_MASTER_NODE).each do |i|
-    config.vm.define "master-#{i}" do |node|
+  # Provision Control-Plane Nodes
+  (1..NUM_CONTROL_PLANE_NODE).each do |i|
+    config.vm.define "control-plane-#{i}" do |node|
       # Name shown in the GUI
       node.vm.provider "virtualbox" do |vb|
-        vb.name = "kubernetes-the-scripted-way-master-#{i}"
+        vb.name = "kubernetes-the-scripted-way-control-plane-#{i}"
         vb.memory = 1024
         vb.cpus = 2
       end
-      node.vm.hostname = "master-#{i}"
-      node.vm.network :private_network, ip: IP_NW + "#{MASTER_IP_START + i}"
+      node.vm.hostname = "control-plane-#{i}"
+      node.vm.network :private_network, ip: IP_NW + "#{CONTROL_PLANE_IP_START + i}"
       #node.vm.network "forwarded_port", guest: 22, host: "#{2710 + i}"
 
       node.vm.provision "environment-file", type: "file", source: "kubernetes-the-scripted-way.env", destination: "/tmp/kubernetes-the-scripted-way.sh"
@@ -55,10 +55,11 @@ Vagrant.configure("2") do |config|
       node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
 
       node.vm.provision "allow-bridge-nf-traffic", type: "shell", inline: $allow_bridge_nf_traffic
-      node.vm.provision "install-docker", type: "shell", inline: $install_docker
+      #node.vm.provision "install-docker", type: "shell", inline: $install_docker
+      node.vm.provision "install-containerd", type: "shell", inline: $install_containerd
 
     end
-  end # masters
+  end # control-plane nodes
 
   # Provision Worker Nodes
   (1..NUM_WORKER_NODE).each do |i|
@@ -79,7 +80,8 @@ Vagrant.configure("2") do |config|
       node.vm.provision "setup-hosts", type: "shell", inline: $setup_hosts
 
       node.vm.provision "allow-bridge-nf-traffic", type: "shell", inline: $allow_bridge_nf_traffic
-      node.vm.provision "install-docker", type: "shell", inline: $install_docker
+      #node.vm.provision "install-docker", type: "shell", inline: $install_docker
+      node.vm.provision "install-containerd", type: "shell", inline: $install_containerd
 
     end
   end # workers
@@ -111,9 +113,9 @@ sed -e '/^.*ubuntu-bionic.*/d' -i /etc/hosts
 # Update /etc/hosts about other hosts
 echo "#{IP_NW}#{LB_IP_START} kubernetes lb loadbalancer" >> /etc/hosts
 
-for i in {1..#{NUM_MASTER_NODE}}; do
-  NR=$(expr #{MASTER_IP_START} + ${i})
-  echo "#{IP_NW}${NR} master-${i}" >> /etc/hosts
+for i in {1..#{NUM_CONTROL_PLANE_NODE}}; do
+  NR=$(expr #{CONTROL_PLANE_IP_START} + ${i})
+  echo "#{IP_NW}${NR} control-plane-${i}" >> /etc/hosts
 done
 
 for i in {1..#{NUM_WORKER_NODE}}; do
@@ -123,16 +125,69 @@ done
 SCRIPT
 
 
+$install_containerd = <<SCRIPT
+set -euxo pipefail
+# Install containerd from Docker's repositories
+sudo apt-get -qq update
+sudo apt-get -qq install -y \
+  apt-transport-https \
+  ca-certificates \
+  curl \
+  gnupg \
+  lsb-release
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo \
+  "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get -qq update
+sudo apt-get -qq install -y containerd.io
+
+# Configure containerd
+sudo sed -e 's/^\\(disabled_plugins = \\["cri"\\]\\)/#\\1/g' -i /etc/containerd/config.toml
+cat <<EOF | sudo tee -a /etc/containerd/config.toml
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+    SystemdCgroup = true
+EOF
+
+# Restart containerd
+sudo systemctl restart containerd
+SCRIPT
+
 $install_docker = <<SCRIPT
-set -x
-# Install docker
-curl -fsSL https://get.docker.com | bash
+set -euxo pipefail
+# Install docker & containerd using convenience script.
+# Note: this will install the latest docker edge release which includes
+# containerd. This is not recommended for production use.
+#curl -fsSL https://get.docker.com | bash
+
+# Install docker & containerd from Docker's repository.
+sudo apt-get -qq update
+sudo apt-get -qq install -y \
+  apt-transport-https \
+  ca-certificates \
+  curl \
+  gnupg \
+  lsb-release
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo \
+  "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get -qq update
+sudo apt-get -qq install -y docker-ce docker-ce-cli containerd.io
 
 # Give vagrant user access to docker socket
-usermod -aG docker vagrant
+sudo usermod -aG docker vagrant
 
-# Setup daemon
-cat > /etc/docker/daemon.json <<EOF
+# Configure docker daemon
+cat <<EOF | sudo tee /etc/docker/daemon.json 
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
@@ -143,24 +198,32 @@ cat > /etc/docker/daemon.json <<EOF
 }
 EOF
 
-mkdir -p /etc/systemd/system/docker.service.d
+sudo mkdir -p /etc/systemd/system/docker.service.d
 
 # Restart docker
-systemctl daemon-reload
-systemctl restart docker
+sudo systemctl daemon-reload
+sudo systemctl restart docker
 SCRIPT
 
 
 $allow_bridge_nf_traffic = <<SCRIPT
 set -euxo pipefail
-lsmod | grep br_netfilter || modprobe br_netfilter
 
-cat <<EOF > /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
+cat <<EOF | sudo tee /etc/modules-load.d/kubernetes.conf
+overlay
+br_netfilter
 EOF
 
-sysctl --system
+lsmod | grep overlay || sudo modprobe overlay
+lsmod | grep br_netfilter || sudo modprobe br_netfilter
+
+cat <<EOF | sudo tee /etc/sysctl.d/kubernetes.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+sudo sysctl --system
 SCRIPT
 
 
@@ -168,7 +231,7 @@ $setup_loadbalancer = <<SCRIPT
 set -euxo pipefail
 
 LB_IP=$(ip addr show enp0s8 | grep "inet " | awk '{print $2}' | cut -d / -f 1)
-MASTER_NODES=$(grep master /etc/hosts | awk '{print $2}')
+CONTROL_PLANE_NODES=$(grep "control-plane" /etc/hosts | awk '{print $2}')
 
 ## Run on Loadbalancer
 
@@ -197,7 +260,7 @@ backend kubernetes-control-plane
     balance roundrobin
 EOF
 
-for instance in ${MASTER_NODES}; do
+for instance in ${CONTROL_PLANE_NODES}; do
   cat <<EOF | sudo tee -a /etc/haproxy/haproxy.cfg
     server ${instance} $(grep ${instance} /etc/hosts | awk '{print $1}'):6443 check fall 3 rise 2
 EOF

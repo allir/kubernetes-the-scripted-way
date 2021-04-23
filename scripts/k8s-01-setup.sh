@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-# Run on master-1 
+# Run on control-plane-1 
 
 { # Install CFSSL
   curl -L https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 -o cfssl
@@ -147,7 +147,7 @@ cfssl gencert \
 }
 
 { # Generate Kubelet Certificates
-for instance in $MASTER_NODES $WORKER_NODES; do
+for instance in $CONTROL_PLANE_NODES $WORKER_NODES; do
 cat > ${instance}-csr.json <<EOF
 {
   "CN": "system:node:${instance}",
@@ -264,8 +264,8 @@ cfssl gencert \
 
 { # Generate Kubernetes API (kube-apiserver) Server Certificate
 KUBERNETES_HOSTNAMES=kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local
-MASTER_NODE_IPS=$(for ip in $(grep master /etc/hosts | awk '{print $1}'); do printf ${ip},; done)
-MASTER_NODE_IPS=${MASTER_NODE_IPS%?}
+CONTROL_PLANE_NODE_IPS=$(for ip in $(grep "control-plane" /etc/hosts | awk '{print $1}'); do printf ${ip},; done)
+CONTROL_PLANE_NODE_IPS=${CONTROL_PLANE_NODE_IPS%?}
 
 cat > kubernetes-csr.json <<EOF
 {
@@ -289,7 +289,7 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -hostname=${KUBERNETES_SERVICE_IP},${MASTER_NODE_IPS},${LOADBALANCER_IP},127.0.0.1,${KUBERNETES_HOSTNAMES} \
+  -hostname=${KUBERNETES_SERVICE_IP},${CONTROL_PLANE_NODE_IPS},${LOADBALANCER_IP},127.0.0.1,${KUBERNETES_HOSTNAMES} \
   -profile=server \
   kubernetes-csr.json | cfssljson -bare kubernetes
 }
@@ -352,7 +352,7 @@ cfssl gencert \
 
 
 { # Generate ETCD Server Certificates
-for instance in $MASTER_NODES; do
+for instance in $CONTROL_PLANE_NODES; do
 cat > etcd-server-${instance}-csr.json <<EOF
 {
   "CN": "${instance}",
@@ -385,7 +385,7 @@ done
 
 
 { # Generate ETCD Peer Certificates
-for instance in $MASTER_NODES; do
+for instance in $CONTROL_PLANE_NODES; do
 cat > etcd-peer-${instance}-csr.json <<EOF
 {
   "CN": "${instance}",
@@ -499,12 +499,12 @@ cfssl gencert \
 }
 
 
-{ # Copy Certificates to master & worker nodes
+{ # Copy Certificates to control-plane & worker nodes
 for instance in $WORKER_NODES; do
   scp -o StrictHostKeyChecking=no ca.pem ${instance}-key.pem ${instance}.pem ${instance}:~/
 done
 
-for instance in $MASTER_NODES; do
+for instance in $CONTROL_PLANE_NODES; do
   scp -o StrictHostKeyChecking=no \
     ca.pem ca-key.pem \
     kubernetes-key.pem kubernetes.pem \
@@ -523,7 +523,7 @@ done
 }
 
 { # Generate kubeconfig files
-for instance in $MASTER_NODES $WORKER_NODES; do
+for instance in $CONTROL_PLANE_NODES $WORKER_NODES; do
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
@@ -626,12 +626,12 @@ done
 }
 } # End Generate configs
 
-{ # Copy kubeconfigs to worker and master nodes
+{ # Copy kubeconfigs to worker and control-plane nodes
 for instance in $WORKER_NODES; do
   scp -o StrictHostKeyChecking=no ${instance}.kubeconfig kube-proxy.kubeconfig ${instance}:~/
 done
 
-for instance in $MASTER_NODES; do
+for instance in $CONTROL_PLANE_NODES; do
   scp -o StrictHostKeyChecking=no ${instance}.kubeconfig kube-proxy.kubeconfig admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
 done
 }
@@ -654,8 +654,8 @@ resources:
       - identity: {}
 EOF
 
-# Copy Encryption config to master nodes
-for instance in $MASTER_NODES; do
+# Copy Encryption config to control-plane nodes
+for instance in $CONTROL_PLANE_NODES; do
   scp -o StrictHostKeyChecking=no  encryption-config.yaml ${instance}:~/
 done
 }

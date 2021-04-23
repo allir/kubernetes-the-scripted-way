@@ -75,13 +75,15 @@ cat <<EOF | sudo tee /etc/systemd/system/kubelet.service
 [Unit]
 Description=Kubernetes Kubelet
 Documentation=https://github.com/kubernetes/kubernetes
-After=docker.service
-Requires=docker.service
+After=containerd.service
+Requires=containerd.service
 
 [Service]
 ExecStart=/usr/local/bin/kubelet \\
   --bootstrap-kubeconfig="/var/lib/kubelet/bootstrap-kubeconfig" \\
   --config=/var/lib/kubelet/kubelet-config.yaml \\
+  --container-runtime=remote \\
+  --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock \\
   --image-pull-progress-deadline=2m \\
   --kubeconfig=/var/lib/kubelet/kubeconfig \\
   --cert-dir=/var/lib/kubelet/pki/ \\
@@ -130,9 +132,9 @@ sudo systemctl start kubelet kube-proxy
 systemctl status --no-pager kubelet kube-proxy
 }
 
-# Label master nodes with role
-if [[ ${HOSTNAME} == "master-"* ]]; then
+# Label control-plane nodes with role
+if [[ ${HOSTNAME} == "control-plane-"* ]]; then
   # Wait for the node to show up
   sleep 5
-  kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/master=
+  kubectl --kubeconfig admin.kubeconfig label node ${HOSTNAME} node-role.kubernetes.io/control-plane=
 fi

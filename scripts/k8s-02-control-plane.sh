@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-# Run on all MASTER nodes
+# Run on all CONTROL-PLANE nodes
 
-ETCD_CLUSTER=$(for master in $(grep master /etc/hosts | awk '{ print $2 "=https://" $1 ":2380" }'); do printf ${master},; done)
+ETCD_CLUSTER=$(for node in $(grep "control-plane" /etc/hosts | awk '{ print $2 "=https://" $1 ":2380" }'); do printf ${node},; done)
 ETCD_CLUSTER=${ETCD_CLUSTER%?}
-ETCD_SERVERS=$(for master in $(grep master /etc/hosts | awk '{ print "https://" $1 ":2379" }'); do printf ${master},; done)
+ETCD_SERVERS=$(for node in $(grep "control-plane" /etc/hosts | awk '{ print "https://" $1 ":2379" }'); do printf ${node},; done)
 ETCD_SERVERS=${ETCD_SERVERS%?}
 
-{ # Bootstrap ETCD on Master Nodes
+{ # Bootstrap ETCD on Control-Plane Nodes
 curl -LO https://storage.googleapis.com/etcd/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz
 
 tar -xvf etcd-${ETCD_VERSION}-linux-amd64.tar.gz
@@ -123,7 +123,9 @@ ExecStart=/usr/local/bin/kube-apiserver \\
   --requestheader-extra-headers-prefix=X-Remote-Extra- \\
   --requestheader-group-headers=X-Remote-Group \\
   --requestheader-username-headers=X-Remote-User \\
+  --service-account-issuer=/var/lib/kubernetes/ca.pem \\
   --service-account-key-file=/var/lib/kubernetes/service-account.pem \\
+  --service-account-signing-key-file=/var/lib/kubernetes/service-account-key.pem \\
   --service-cluster-ip-range=${CLUSTER_SERVICE_CIDR} \\
   --service-node-port-range=30000-32767 \\
   --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \\
@@ -198,11 +200,11 @@ echo "Wait for API Server to be ready"
 sleep 7
 # kubectl get componentstatuses --kubeconfig admin.kubeconfig --- DEPRECATED
 # Get the kubernetes API health status, includes etcd health.
-curl -k https://localhost:6443/readyz?verbose
+curl -k https://localhost:6443/healthz?verbose
 # Get the kube-scheduler health status
-curl localhost:10251/readyz?verbose
+curl localhost:10251/healthz?verbose
 # Get the kube-controller-manager health status
-curl localhost:10252/readyz?verbose
+curl localhost:10252/healthz?verbose
 
 kubectl get nodes --kubeconfig admin.kubeconfig
 curl --cacert ca.pem https://${LOADBALANCER_IP}:6443/version
